@@ -1,0 +1,239 @@
+import os
+import logging
+from dotenv import load_dotenv
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+
+# Загружаем переменные из .env
+load_dotenv()
+
+# Получаем токен из переменной окружения
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+
+# Контакт администратора (замени на свой юзернейм)
+ADMIN_CONTACT = "@Xinkali_love @idgafabys"
+
+# --- Ссылки (теперь для каждого предмета можно указать ДВЕ ссылки) ---
+# Формат: "класс_предмет": ["ссылка_1", "ссылка_2"]
+LINKS = {
+    "5_биология": [
+        "https://t.me/campvibebio",
+        "https://t.me/+dEjMJrFcncNhN2Qy"
+    ],
+    "5_математика": [
+        "https://t.me/campvibemath",
+        "https://t.me/+uSX7VMLd0FEzMjJi"
+    ],
+    "7_биология": [
+        "https://t.me/campvibebio",
+        "https://t.me/+dEjMJrFcncNhN2Qy"
+    ],
+    "7_алгебра": [
+        "https://t.me/campvibemath",
+        "https://t.me/+uSX7VMLd0FEzMjJi"
+    ],
+    "7_геометрия": [
+        "https://t.me/campvibemath",
+        "https://t.me/+uSX7VMLd0FEzMjJi"
+    ],
+    "7_физика": [
+        "https://t.me/campvibephys",
+        "https://t.me/+nOREDQXwAfU1NWVi"
+    ],
+    "8_биология": [
+        "https://t.me/campvibebio",
+        "https://t.me/+dEjMJrFcncNhN2Qy"
+    ],
+    "8_алгебра": [
+        "https://t.me/campvibemath",
+        "https://t.me/+uSX7VMLd0FEzMjJi"
+    ],
+    "8_геометрия": [
+        "https://t.me/campvibemath",
+        "https://t.me/+uSX7VMLd0FEzMjJi"
+    ],
+    "8_физика": [
+        "https://t.me/campvibephys",
+        "https://t.me/+nOREDQXwAfU1NWVi"
+    ],
+    "8_химия": [
+        "https://t.me/campvibehim",
+        "https://t.me/+jbM1bQE2brQ5ZGMy"
+    ],
+}
+
+
+# Словари для работы бота
+SUBJECTS_MAP = {
+    "Биология": "биология",
+    "Математика": "математика",
+    "Алгебра": "алгебра",
+    "Геометрия": "геометрия",
+    "Физика": "физика",
+    "Химия": "химия",
+}
+
+SUBJECTS_BY_CLASS = {
+    "5": ["Биология", "Математика"],
+    "7": ["Биология", "Алгебра", "Геометрия", "Физика"],
+    "8": ["Биология", "Алгебра", "Геометрия", "Физика", "Химия"],
+}
+
+ASK_ROLE, ASK_CLASS, ASK_SUBJECTS = range(3)
+
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s", level=logging.INFO)
+
+# -------------------- ВСЕ ФУНКЦИИ БОТА --------------------
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    context.user_data.clear()
+    await update.message.reply_text(
+        f"Привет, {user.first_name}!\n\nС кем я сейчас общаюсь?",
+        reply_markup=ReplyKeyboardMarkup([["Родитель", "Ребёнок"]], one_time_keyboard=True, resize_keyboard=True),
+    )
+    return ASK_ROLE
+
+async def role_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    role = update.message.text
+    if role not in ["Родитель", "Ребёнок"]:
+        await update.message.reply_text("Пожалуйста, выберите 'Родитель' или 'Ребёнок'.")
+        return ASK_ROLE
+    context.user_data["role"] = role
+    await update.message.reply_text(
+        "В какой класс переходит ваш ребёнок?" if role == "Родитель" else "В какой класс ты переходишь?",
+        reply_markup=ReplyKeyboardMarkup([["5", "7", "8"]], one_time_keyboard=True, resize_keyboard=True),
+    )
+    return ASK_CLASS
+
+async def class_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    class_num = update.message.text
+    if class_num not in ["5", "7", "8"]:
+        await update.message.reply_text("Пожалуйста, выберите 5, 7 или 8.")
+        return ASK_CLASS
+    context.user_data["class"] = class_num
+    context.user_data["selected_subjects"] = []
+    subjects = SUBJECTS_BY_CLASS[class_num]
+    role = context.user_data["role"]
+    
+    if class_num == "5":
+        keyboard = [[s] for s in subjects]
+        text = "Выберите предмет, который вам нужен:" if role == "Родитель" else "Выбери предмет, который тебе нужен:"
+        await update.message.reply_text(text, reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True))
+        return ASK_SUBJECTS
+    
+    keyboard = []
+    for subject in subjects:
+        keyboard.append([InlineKeyboardButton(f"❌ {subject}", callback_data=f"toggle_{subject}")])
+    keyboard.append([InlineKeyboardButton("✅ ГОТОВО", callback_data="done")])
+    await update.message.reply_text(
+        f"📚 {'Выберите предметы' if role == 'Родитель' else 'Выбери предметы'} (можно выбрать несколько):\n\nНажмите на предмет, чтобы выбрать/отменить.\nКогда закончите — нажмите «ГОТОВО».",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return ASK_SUBJECTS
+
+async def handle_subject_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    
+    if data == "done":
+        selected = context.user_data.get("selected_subjects", [])
+        if not selected:
+            await query.edit_message_text("⚠️ Вы не выбрали ни одного предмета.", reply_markup=query.message.reply_markup)
+            return ASK_SUBJECTS
+        await send_links(update, context, query)
+        return ConversationHandler.END
+    elif data.startswith("toggle_"):
+        subject = data.replace("toggle_", "")
+        selected = context.user_data.get("selected_subjects", [])
+        if subject in selected:
+            selected.remove(subject)
+        else:
+            selected.append(subject)
+        context.user_data["selected_subjects"] = selected
+        subjects = SUBJECTS_BY_CLASS[context.user_data["class"]]
+        new_keyboard = []
+        for s in subjects:
+            new_keyboard.append([InlineKeyboardButton(f"✅ {s}" if s in selected else f"❌ {s}", callback_data=f"toggle_{s}")])
+        new_keyboard.append([InlineKeyboardButton("✅ ГОТОВО", callback_data="done")])
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(new_keyboard))
+        return ASK_SUBJECTS
+
+async def send_links(update: Update, context: ContextTypes.DEFAULT_TYPE, query=None):
+    class_num = context.user_data["class"]
+    selected = context.user_data["selected_subjects"]
+    
+    if query:
+        await query.edit_message_text("📖 Загружаю ссылки...")
+    
+    message = "🔗 Вот все ссылки на выбранные материалы:\n\n"
+    for subject in selected:
+        key = f"{class_num}_{SUBJECTS_MAP[subject]}"
+        if key in LINKS and len(LINKS[key]) >= 2:
+            message += f"📘 *{subject}* ({class_num} класс):\n   📌 Основной канал: {LINKS[key][0]}\n   💬 Чат/группа: {LINKS[key][1]}\n\n"
+        elif key in LINKS:
+            message += f"📘 *{subject}* ({class_num} класс):\n   🔗 {LINKS[key][0]}\n\n"
+    
+    message += "\n✅ Если нужны ещё материалы — нажмите /start"
+    
+    if query:
+        await query.message.reply_text(message, parse_mode="Markdown")
+        await query.message.reply_text("Спасибо за обращение!", reply_markup=ReplyKeyboardRemove())
+    else:
+        await update.message.reply_text(message, parse_mode="Markdown")
+
+async def single_subject_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    subject = update.message.text
+    class_num = context.user_data["class"]
+    key = f"{class_num}_{SUBJECTS_MAP[subject]}"
+    
+    if key in LINKS:
+        message = f"🔗 Вот ссылки на материалы по *{subject}* для {class_num} класса:\n\n"
+        if len(LINKS[key]) >= 2:
+            message += f"📌 Основной канал: {LINKS[key][0]}\n💬 Чат/группа: {LINKS[key][1]}"
+        else:
+            message += f"🔗 Ссылка: {LINKS[key][0]}"
+        await update.message.reply_text(message, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+    else:
+        await update.message.reply_text("⚠️ Ссылки временно недоступны.", reply_markup=ReplyKeyboardRemove())
+    
+    return ConversationHandler.END
+
+async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"👨‍🏫 Если есть вопросы, обратитесь сюда: {ADMIN_CONTACT}")
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("❌ Диалог отменён. Напишите /start.", reply_markup=ReplyKeyboardRemove())
+    return ConversationHandler.END
+
+async def fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🤖 Напишите /start или /question")
+
+# -------------------- ЗАПУСК БОТА --------------------
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            ASK_ROLE: [MessageHandler(filters.Regex("^(Родитель|Ребёнок)$"), role_selected)],
+            ASK_CLASS: [MessageHandler(filters.Regex("^(5|7|8)$"), class_selected)],
+            ASK_SUBJECTS: [
+                CallbackQueryHandler(handle_subject_selection, pattern="^(toggle_|done)"),
+                MessageHandler(filters.Regex("^(Биология|Математика)$"), single_subject_selected),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    
+    app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("question", ask_question))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, fallback))
+    
+    print("✅ Бот запущен!")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    main()
