@@ -3,7 +3,20 @@ import logging
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from flask import Flask
+from threading import Thread
+# -------------------- ВЕБ-СЕРВЕР ДЛЯ RENDER --------------------
+web_app = Flask(__name__)
 
+@web_app.route('/')
+def home():
+    return "Бот работает!"
+
+def run_web():
+    web_app.run(host='0.0.0.0', port=8080)
+
+Thread(target=run_web).start()
+# -------------------------------------------------------------
 # Загружаем переменные из .env
 load_dotenv()
 
@@ -11,7 +24,7 @@ load_dotenv()
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 
 # Контакт администратора (замени на свой юзернейм)
-ADMIN_CONTACT = "@Xinkali_love @idgafabys"
+ADMIN_CONTACT = "@Xinkali_love, @idgafabys"
 
 # --- Ссылки (теперь для каждого предмета можно указать ДВЕ ссылки) ---
 # Формат: "класс_предмет": ["ссылка_1", "ссылка_2"]
